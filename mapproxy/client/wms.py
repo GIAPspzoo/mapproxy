@@ -189,6 +189,8 @@ class WMSInfoClient(object):
         if not req.params.format:
             req.params.format = query.format or 'image/png'
         req.params.srs = query.srs.srs_code
+        for param, value in query.additional_params.items():
+            req.params[param] = value
 
         return req.complete_url
 

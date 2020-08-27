@@ -139,8 +139,18 @@ class MapQuery(object):
         return "MapQuery(bbox=%(bbox)s, size=%(size)s, srs=%(srs)r, format=%(format)s)" % self.__dict__
 
 class InfoQuery(object):
+    ADDITIONAL_PARAMS = [
+        'filter',
+        'fi_point_tolerance',
+        'fi_line_tolerance',
+        'fi_polygon_tolerance',
+        'filter_geom',
+        'with_maptip',
+        'with_geometry'
+    ]
+
     def __init__(self, bbox, size, srs, pos, info_format, format=None,
-        feature_count=None):
+        feature_count=None, additional_params=None):
         self.bbox = bbox
         self.size = size
         self.srs = srs
@@ -148,6 +158,7 @@ class InfoQuery(object):
         self.info_format = info_format
         self.format = format
         self.feature_count = feature_count
+        self.additional_params = additional_params or set()
 
     @property
     def coord(self):
