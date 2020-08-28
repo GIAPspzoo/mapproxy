@@ -158,7 +158,7 @@ class InfoQuery(object):
         self.info_format = info_format
         self.format = format
         self.feature_count = feature_count
-        self.additional_params = additional_params or set()
+        self.additional_params = additional_params or {}
 
     @property
     def coord(self):
