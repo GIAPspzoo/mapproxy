@@ -412,6 +412,7 @@ def restart_with_reloader():
 def run_with_reloader(main_func, extra_files=None, interval=1):
     """Run the given function in an independent python interpreter."""
     import signal
+    print(main_func)
     signal.signal(signal.SIGTERM, lambda *args: sys.exit(0))
     if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
         thread.start_new_thread(main_func, ())
@@ -487,6 +488,15 @@ def run_simple(hostname, port, application, use_reloader=False,
     def inner():
         ThreadedWSGIServer(hostname, port, application, request_handler,
                     passthrough_errors).serve_forever()
+
+
+    from werkzeug.middleware.dispatcher import DispatcherMiddleware
+    from prometheus_client import make_wsgi_app as prometheus_app, REGISTRY
+
+    metrics = prometheus_app(registry=REGISTRY)
+    application = DispatcherMiddleware(application, {
+        '/metrics': metrics
+    })
 
     if os.environ.get('WERKZEUG_RUN_MAIN') != 'true':
         display_hostname = hostname != '*' and hostname or 'localhost'

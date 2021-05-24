@@ -46,7 +46,15 @@ from mapproxy.image.tile import TileSplitter, TiledImage
 from mapproxy.layer import MapQuery, BlankImage
 from mapproxy.util import async_
 from mapproxy.util.py import reraise
+import time 
 
+from prometheus_client import Histogram, Counter, Summary
+
+source_request = Histogram('mapproxy_source_request_seconds', 'Source request secconds')
+source_request_status = Counter("mapproxy_source_request_status", "source request status", labelnames=("status", ))
+split_time = Histogram("mapproxy_split_meta_time", "Meta images split time")
+cache_save = Histogram("mapproxy_cache_save_time", "Cache save times")
+tiles_from_meta_created = Counter("mapproxy_tiles_from_meta_created", "Tiles created from meta request")
 
 class TileManager(object):
     """
@@ -167,7 +175,7 @@ class TileManager(object):
                 uncached_tiles.append(tile)
 
         if uncached_tiles:
-            creator = self.creator(dimensions=dimensions)
+            creator = self.creator(dimensions=dimensions) 
             created_tiles = creator.create_tiles(uncached_tiles)
             if not created_tiles and self.rescale_tiles:
                 created_tiles = [self._scaled_tile(t, rescale_till_zoom, rescaled_tiles) for t in uncached_tiles]
@@ -437,13 +445,35 @@ class TileCreator(object):
         main_tile = Tile(meta_tile.main_tile_coord)
         with self.tile_mgr.lock(main_tile):
             if not all(self.is_cached(t) for t in meta_tile.tiles if t is not None):
+                start_query_time = time.time() # start query time
                 meta_tile_image = self._query_sources(query)
+
+                end_query_time = time.time() # end query time
                 if not meta_tile_image: return []
+                start_split_meta_time = time.time() # split meta time
                 splitted_tiles = split_meta_tiles(meta_tile_image, meta_tile.tile_patterns,
                                                   tile_size, self.tile_mgr.image_opts)
+                end_split_meta_time = time.time() # end split meta time
                 splitted_tiles = [self.tile_mgr.apply_tile_filter(t) for t in splitted_tiles]
+                
+                tiles_created_from_meta = len(splitted_tiles) # tiles created from meta
                 if meta_tile_image.cacheable:
+                    start_store_tiles_time = time.time() # store time start
                     self.cache.store_tiles(splitted_tiles)
+                    end_store_tiles_time = time.time() # store time end
+                
+                try:
+                    # save metrics
+                    status = meta_tile_image.source.status
+                    source_request_status.labels(str(status)).inc()
+                except AttributeError as e:
+                    pass
+                source_request_time = end_query_time - start_query_time
+                source_request.observe(source_request_time)
+                split_time.observe(end_split_meta_time - start_split_meta_time)
+                cache_save.observe(end_store_tiles_time - start_store_tiles_time)
+                tiles_from_meta_created.inc(amount=tiles_created_from_meta)
+                
                 return splitted_tiles
             # else
         tiles = [Tile(coord) for coord in meta_tile.tiles]

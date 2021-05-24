@@ -35,10 +35,14 @@ from mapproxy.request import Request
 from mapproxy.response import Response
 from mapproxy.config import local_base_config
 from mapproxy.config.loader import load_configuration, ConfigurationError
+from prometheus_client import Counter, Histogram
 
 log = logging.getLogger('mapproxy.config')
 log_wsgiapp = logging.getLogger('mapproxy.wsgiapp')
 
+services_to_monitor = ['tiles', 'tms', 'kml', 'wmts', 'service', 'ows', 'wms']
+service_response_time = Histogram('mapproxy_service_response_time', 'Mapproxy service response time', labelnames=('service', 'status'))
+service_response_total = Counter('mapproxy_service_response_count', 'total number of responses', labelnames=('service', 'status' ))
 
 def make_wsgi_app(services_conf=None, debug=False, ignore_config_warnings=True, reloader=False):
     """
@@ -136,7 +140,11 @@ class MapProxyApp(object):
             match = self.handler_path_re.match(req.path)
             if match:
                 handler_name = match.group(1)
+
                 if handler_name in self.handlers:
+                    # start time of response
+                    if handler_name in services_to_monitor:
+                        start_time = time.time()
                     try:
                         resp = self.handlers[handler_name].handle(req)
                     except Exception:
@@ -148,6 +156,10 @@ class MapProxyApp(object):
                             import traceback
                             traceback.print_exc(file=environ['wsgi.errors'])
                             resp = Response('internal error', status=500)
+
+                    if handler_name in services_to_monitor:
+                        service_response_time.labels(handler_name, resp.status).observe(time.time() - start_time)
+                        service_response_total.labels(handler_name, resp.status).inc()
             if resp is None:
                 if req.path in ('', '/'):
                     resp = self.welcome_response(req.script_url)
